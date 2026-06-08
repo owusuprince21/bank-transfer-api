@@ -1,0 +1,35 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color: #17211d;
+    background: #f4f7f6;
+    font-family:
+      Manrope, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  p {
+    margin: 0;
+  }
+}
+
+@layer utilities {
+  .signin-hero {
+    background:
+      linear-gradient(rgba(13, 38, 32, 0.08), rgba(13, 38, 32, 0.82)),
+      url("https://images.unsplash.com/photo-1556742031-c6961e8560b0?auto=format&fit=crop&w=1600&q=80");
+    background-position: center;
+    background-size: cover;
+  }
+}
