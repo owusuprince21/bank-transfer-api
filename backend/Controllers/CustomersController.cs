@@ -2,8 +2,10 @@ using ApiDemo.Data;
 using ApiDemo.Dtos;
 using ApiDemo.Models;
 using ApiDemo.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace ApiDemo.Controllers;
 
@@ -19,11 +21,19 @@ public class CustomersController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize]
     public async Task<ActionResult<IEnumerable<CustomerResponse>>> GetCustomers()
     {
+        var currentCustomerId = GetCurrentCustomerId();
+        if (currentCustomerId is null)
+        {
+            return Unauthorized();
+        }
+
         var customers = await _dbContext.Customers
             .AsNoTracking()
             .Include(customer => customer.Accounts)
+            .Where(customer => customer.Id == currentCustomerId.Value)
             .OrderBy(customer => customer.LastName)
             .ThenBy(customer => customer.FirstName)
             .ToListAsync();
@@ -31,40 +41,15 @@ public class CustomersController : ControllerBase
         return Ok(customers.Select(ToCustomerResponse));
     }
 
-    [HttpGet("recipients")]
-    public async Task<ActionResult<IEnumerable<RecipientCustomerResponse>>> GetRecipients(Guid? excludeCustomerId)
-    {
-        var query = _dbContext.Customers
-            .AsNoTracking()
-            .Include(customer => customer.Accounts)
-            .AsQueryable();
-
-        if (excludeCustomerId.HasValue)
-        {
-            query = query.Where(customer => customer.Id != excludeCustomerId.Value);
-        }
-
-        var customers = await query
-            .OrderBy(customer => customer.FirstName)
-            .ThenBy(customer => customer.LastName)
-            .ToListAsync();
-
-        var recipients = customers.Select(customer => new RecipientCustomerResponse(
-            customer.Id,
-            customer.FirstName,
-            customer.LastName,
-            customer.Email,
-            customer.Accounts
-                .Where(account => account.IsActive)
-                .Select(ToAccountResponse)
-                .ToList()));
-
-        return Ok(recipients);
-    }
-
     [HttpGet("{id:guid}")]
+    [Authorize]
     public async Task<ActionResult<CustomerResponse>> GetCustomer(Guid id)
     {
+        if (id != GetCurrentCustomerId())
+        {
+            return Forbid();
+        }
+
         var customer = await _dbContext.Customers
             .AsNoTracking()
             .Include(existingCustomer => existingCustomer.Accounts)
@@ -74,6 +59,7 @@ public class CustomersController : ControllerBase
     }
 
     [HttpPost]
+    [AllowAnonymous]
     public async Task<ActionResult<CustomerResponse>> OnboardCustomer(OnboardCustomerRequest request)
     {
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
@@ -120,8 +106,14 @@ public class CustomersController : ControllerBase
     }
 
     [HttpGet("{id:guid}/accounts")]
+    [Authorize]
     public async Task<ActionResult<IEnumerable<AccountResponse>>> GetCustomerAccounts(Guid id)
     {
+        if (id != GetCurrentCustomerId())
+        {
+            return Forbid();
+        }
+
         var customerExists = await _dbContext.Customers.AnyAsync(customer => customer.Id == id);
         if (!customerExists)
         {
@@ -189,5 +181,11 @@ public class CustomersController : ControllerBase
     private static string GenerateReferenceNumber()
     {
         return $"TXN-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(100000, 999999)}";
+    }
+
+    private Guid? GetCurrentCustomerId()
+    {
+        var customerIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(customerIdValue, out var customerId) ? customerId : null;
     }
 }

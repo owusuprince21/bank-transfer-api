@@ -1,13 +1,16 @@
 using ApiDemo.Data;
 using ApiDemo.Dtos;
 using ApiDemo.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace ApiDemo.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class AccountsController : ControllerBase
 {
     private readonly BankingDbContext _dbContext;
@@ -23,6 +26,11 @@ public class AccountsController : ControllerBase
         var account = await _dbContext.BankAccounts
             .AsNoTracking()
             .FirstOrDefaultAsync(existingAccount => existingAccount.Id == id);
+
+        if (account is not null && account.CustomerId != GetCurrentCustomerId())
+        {
+            return Forbid();
+        }
 
         return account is null ? NotFound() : Ok(ToAccountResponse(account));
     }
@@ -53,7 +61,13 @@ public class AccountsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<AccountResponse>> CreateAccount(CreateAccountRequest request)
     {
-        var customerExists = await _dbContext.Customers.AnyAsync(customer => customer.Id == request.CustomerId);
+        var currentCustomerId = GetCurrentCustomerId();
+        if (currentCustomerId is null || request.CustomerId != currentCustomerId.Value)
+        {
+            return Forbid();
+        }
+
+        var customerExists = await _dbContext.Customers.AnyAsync(customer => customer.Id == currentCustomerId.Value);
         if (!customerExists)
         {
             return BadRequest(new { message = "Customer does not exist." });
@@ -61,7 +75,7 @@ public class AccountsController : ControllerBase
 
         var account = new BankAccount
         {
-            CustomerId = request.CustomerId,
+            CustomerId = currentCustomerId.Value,
             AccountNumber = GenerateAccountNumber(),
             AccountType = string.IsNullOrWhiteSpace(request.AccountType) ? "Savings" : request.AccountType.Trim(),
             Balance = request.OpeningDeposit
@@ -94,6 +108,11 @@ public class AccountsController : ControllerBase
             return NotFound();
         }
 
+        if (account.CustomerId != GetCurrentCustomerId())
+        {
+            return Forbid();
+        }
+
         if (!account.IsActive)
         {
             return BadRequest(new { message = "Account is inactive." });
@@ -118,6 +137,11 @@ public class AccountsController : ControllerBase
         if (account is null)
         {
             return NotFound();
+        }
+
+        if (account.CustomerId != GetCurrentCustomerId())
+        {
+            return Forbid();
         }
 
         if (!account.IsActive)
@@ -154,6 +178,11 @@ public class AccountsController : ControllerBase
         if (sourceAccount is null)
         {
             return NotFound(new { message = "Source account was not found." });
+        }
+
+        if (sourceAccount.CustomerId != GetCurrentCustomerId())
+        {
+            return Forbid();
         }
 
         var destinationAccount = await _dbContext.BankAccounts
@@ -211,10 +240,18 @@ public class AccountsController : ControllerBase
     [HttpGet("{id:guid}/transactions")]
     public async Task<ActionResult<IEnumerable<TransactionResponse>>> GetAccountTransactions(Guid id)
     {
-        var accountExists = await _dbContext.BankAccounts.AnyAsync(account => account.Id == id);
-        if (!accountExists)
+        var account = await _dbContext.BankAccounts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(existingAccount => existingAccount.Id == id);
+
+        if (account is null)
         {
             return NotFound();
+        }
+
+        if (account.CustomerId != GetCurrentCustomerId())
+        {
+            return Forbid();
         }
 
         var transactions = await _dbContext.BankTransactions
@@ -278,5 +315,11 @@ public class AccountsController : ControllerBase
     private static string GenerateReferenceNumber()
     {
         return $"TXN-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(100000, 999999)}";
+    }
+
+    private Guid? GetCurrentCustomerId()
+    {
+        var customerIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(customerIdValue, out var customerId) ? customerId : null;
     }
 }

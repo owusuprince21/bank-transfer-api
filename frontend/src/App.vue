@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query';
 import { Toaster, toast } from 'vue-sonner';
+import ConfirmationDialog from './components/ConfirmationDialog.vue';
 import DashboardView from './components/DashboardView.vue';
 import SignInView from './components/SignInView.vue';
 import {
@@ -10,21 +11,25 @@ import {
   getAccountTransactions,
   getCustomer,
   login,
+  logout,
   transfer,
   withdraw
 } from './api';
 import { queryKeys } from './queryKeys';
+import { currency } from './utils/formatters';
 import 'vue-sonner/style.css';
 
 const idleTimeoutMs = 3 * 60 * 1000;
 const activityEvents = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
 
-const savedCustomer = localStorage.getItem('bankCustomer');
 const queryClient = useQueryClient();
 
-const signedInCustomer = ref(savedCustomer ? JSON.parse(savedCustomer) : null);
+localStorage.removeItem('bankCustomer');
+
+const signedInCustomer = ref(null);
 const selectedAccountId = ref(signedInCustomer.value?.accounts?.[0]?.id ?? '');
 const errorMessage = ref('');
+const pendingConfirmation = ref(null);
 let idleTimerId;
 
 const customerId = computed(() => signedInCustomer.value?.id ?? '');
@@ -128,7 +133,6 @@ function clearMessages() {
 
 function setSignedInCustomer(customer) {
   signedInCustomer.value = customer;
-  localStorage.setItem('bankCustomer', JSON.stringify(customer));
 }
 
 async function handleLogin(credentials) {
@@ -166,7 +170,20 @@ async function handleTransaction(transaction) {
 
 async function handleCreateAccount(request) {
   clearMessages();
+  pendingConfirmation.value = {
+    type: 'create-account',
+    title: 'Create new account?',
+    description: 'A new bank account will be created for your customer profile.',
+    confirmLabel: 'Create account',
+    payload: request,
+    details: [
+      { label: 'Type', value: request.accountType },
+      { label: 'Opening deposit', value: currency(request.openingDeposit) }
+    ]
+  };
+}
 
+async function createConfirmedAccount(request) {
   try {
     await createAccountMutation.mutateAsync(request);
   } catch (error) {
@@ -183,7 +200,23 @@ async function handleTransfer(request) {
   }
 
   clearMessages();
+  pendingConfirmation.value = {
+    type: 'transfer',
+    title: 'Send money?',
+    description: 'Confirm the recipient and amount before completing this transfer.',
+    confirmLabel: 'Send money',
+    payload: request,
+    details: [
+      { label: 'From', value: selectedAccount.value?.accountNumber ?? 'Selected account' },
+      { label: 'Recipient', value: request.recipientName ?? 'Verified recipient' },
+      { label: 'To', value: request.recipientAccountNumber ?? 'Recipient account' },
+      { label: 'Amount', value: currency(request.amount) },
+      { label: 'Note', value: request.description || 'No note' }
+    ]
+  };
+}
 
+async function sendConfirmedTransfer(request) {
   try {
     await transferMutation.mutateAsync(request);
   } catch (error) {
@@ -192,11 +225,35 @@ async function handleTransfer(request) {
   }
 }
 
-function signOut(options = {}) {
+function cancelConfirmation() {
+  pendingConfirmation.value = null;
+}
+
+async function confirmPendingAction() {
+  const confirmation = pendingConfirmation.value;
+  if (!confirmation) {
+    return;
+  }
+
+  if (confirmation.type === 'create-account') {
+    await createConfirmedAccount(confirmation.payload);
+  }
+
+  if (confirmation.type === 'transfer') {
+    await sendConfirmedTransfer(confirmation.payload);
+  }
+
+  pendingConfirmation.value = null;
+}
+
+async function signOut(options = {}) {
+  if (signedInCustomer.value) {
+    await logout().catch(() => null);
+  }
+
   signedInCustomer.value = null;
   selectedAccountId.value = '';
   queryClient.clear();
-  localStorage.removeItem('bankCustomer');
   clearMessages();
 
   if (options.reason === 'idle') {
@@ -258,6 +315,17 @@ onBeforeUnmount(() => {
 
 <template>
   <Toaster rich-colors position="top-right" />
+
+  <ConfirmationDialog
+    :open="Boolean(pendingConfirmation)"
+    :title="pendingConfirmation?.title"
+    :description="pendingConfirmation?.description"
+    :confirm-label="pendingConfirmation?.confirmLabel"
+    :details="pendingConfirmation?.details ?? []"
+    :is-loading="isBusy"
+    @cancel="cancelConfirmation"
+    @confirm="confirmPendingAction"
+  />
 
   <main class="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,#ecfdf5,transparent_34%),linear-gradient(135deg,#f8fafc_0%,#eef6f3_48%,#f8fafc_100%)] p-4 text-slate-950 md:p-6">
     <SignInView

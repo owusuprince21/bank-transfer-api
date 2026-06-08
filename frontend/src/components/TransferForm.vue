@@ -89,7 +89,9 @@ function submit() {
   emit('submit', {
     destinationAccountId: result.data.destinationAccountId,
     amount: result.data.amount,
-    description: result.data.description
+    description: result.data.description,
+    recipientName: form.destinationAccount.customerName,
+    recipientAccountNumber: form.destinationAccount.accountNumber
   });
 
   form.amount = null;

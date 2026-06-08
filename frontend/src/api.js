@@ -2,6 +2,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5018
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...options.headers
@@ -28,12 +29,14 @@ export function login(email, password) {
   });
 }
 
-export function getCustomer(customerId) {
-  return request(`/api/customers/${customerId}`);
+export function logout() {
+  return request('/api/auth/logout', {
+    method: 'POST'
+  });
 }
 
-export function getRecipients(customerId) {
-  return request(`/api/customers/recipients?excludeCustomerId=${customerId}`);
+export function getCustomer(customerId) {
+  return request(`/api/customers/${customerId}`);
 }
 
 export function createAccount(customerId, accountType, openingDeposit) {

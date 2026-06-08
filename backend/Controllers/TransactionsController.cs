@@ -1,13 +1,16 @@
 using ApiDemo.Data;
 using ApiDemo.Dtos;
 using ApiDemo.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace ApiDemo.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class TransactionsController : ControllerBase
 {
     private readonly BankingDbContext _dbContext;
@@ -22,7 +25,13 @@ public class TransactionsController : ControllerBase
     {
         var transaction = await _dbContext.BankTransactions
             .AsNoTracking()
+            .Include(existingTransaction => existingTransaction.BankAccount)
             .FirstOrDefaultAsync(existingTransaction => existingTransaction.Id == id);
+
+        if (transaction?.BankAccount?.CustomerId != GetCurrentCustomerId())
+        {
+            return transaction is null ? NotFound() : Forbid();
+        }
 
         return transaction is null ? NotFound() : Ok(ToTransactionResponse(transaction));
     }
@@ -40,9 +49,17 @@ public class TransactionsController : ControllerBase
             .Include(transaction => transaction.BankAccount)
             .AsQueryable();
 
-        if (customerId.HasValue)
+        var currentCustomerId = GetCurrentCustomerId();
+        if (currentCustomerId is null)
         {
-            query = query.Where(transaction => transaction.BankAccount != null && transaction.BankAccount.CustomerId == customerId);
+            return Unauthorized();
+        }
+
+        query = query.Where(transaction => transaction.BankAccount != null && transaction.BankAccount.CustomerId == currentCustomerId.Value);
+
+        if (customerId.HasValue && customerId != currentCustomerId.Value)
+        {
+            return Forbid();
         }
 
         if (accountId.HasValue)
@@ -84,5 +101,11 @@ public class TransactionsController : ControllerBase
             transaction.Description,
             transaction.ReferenceNumber,
             transaction.CreatedAtUtc);
+    }
+
+    private Guid? GetCurrentCustomerId()
+    {
+        var customerIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(customerIdValue, out var customerId) ? customerId : null;
     }
 }
