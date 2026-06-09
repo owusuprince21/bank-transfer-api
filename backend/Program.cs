@@ -1,12 +1,19 @@
 using ApiDemo.Data;
+using ApiDemo.Hubs;
+using ApiDemo.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add controllers
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -41,11 +48,16 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+});
 
 builder.Services.AddDbContext<BankingDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("BankingDb")));
 
+builder.Services.AddSignalR();
+builder.Services.AddScoped<CustomerNotificationService>();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -70,13 +82,24 @@ app.UseCors("Frontend");
 
 app.Use(async (context, next) =>
 {
+    var isInlineKycDocumentPreview =
+        context.Request.Path.StartsWithSegments("/api/admin/kyc-documents")
+        && context.Request.Path.Value?.EndsWith("/file", StringComparison.OrdinalIgnoreCase) == true
+        && !context.Request.Query.ContainsKey("download");
+
     context.Response.Headers.TryAdd("X-Content-Type-Options", "nosniff");
-    context.Response.Headers.TryAdd("X-Frame-Options", "DENY");
+    if (!isInlineKycDocumentPreview)
+    {
+        context.Response.Headers.TryAdd("X-Frame-Options", "DENY");
+    }
     context.Response.Headers.TryAdd("Referrer-Policy", "no-referrer");
     context.Response.Headers.TryAdd("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     if (!app.Environment.IsDevelopment())
     {
-        context.Response.Headers.TryAdd("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+        var contentSecurityPolicy = isInlineKycDocumentPreview
+            ? "default-src 'none'; frame-ancestors 'self' http://localhost:5173"
+            : "default-src 'none'; frame-ancestors 'none'";
+        context.Response.Headers.TryAdd("Content-Security-Policy", contentSecurityPolicy);
     }
 
     await next();
@@ -86,5 +109,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<NotificationsHub>("/hubs/notifications");
 
 app.Run();

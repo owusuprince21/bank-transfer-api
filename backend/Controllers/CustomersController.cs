@@ -33,6 +33,8 @@ public class CustomersController : ControllerBase
         var customers = await _dbContext.Customers
             .AsNoTracking()
             .Include(customer => customer.Accounts)
+            .Include(customer => customer.KycDocuments)
+            .Include(customer => customer.SpendingControl)
             .Where(customer => customer.Id == currentCustomerId.Value)
             .OrderBy(customer => customer.LastName)
             .ThenBy(customer => customer.FirstName)
@@ -53,6 +55,8 @@ public class CustomersController : ControllerBase
         var customer = await _dbContext.Customers
             .AsNoTracking()
             .Include(existingCustomer => existingCustomer.Accounts)
+            .Include(existingCustomer => existingCustomer.KycDocuments)
+            .Include(existingCustomer => existingCustomer.SpendingControl)
             .FirstOrDefaultAsync(existingCustomer => existingCustomer.Id == id);
 
         return customer is null ? NotFound() : Ok(ToCustomerResponse(customer));
@@ -75,34 +79,67 @@ public class CustomersController : ControllerBase
             LastName = request.LastName.Trim(),
             Email = normalizedEmail,
             PasswordHash = PasswordHasher.Hash(request.Password),
+            Status = CustomerStatus.PendingApproval,
             PhoneNumber = request.PhoneNumber?.Trim(),
             DateOfBirth = request.DateOfBirth,
             Address = request.Address?.Trim()
         };
 
-        var account = new BankAccount
+        customer.SpendingControl = new SpendingControl
         {
             Customer = customer,
-            AccountNumber = GenerateAccountNumber(),
-            AccountType = string.IsNullOrWhiteSpace(request.AccountType) ? "Savings" : request.AccountType.Trim(),
-            Balance = request.OpeningDeposit
+            MonthlySpendLimit = 0,
+            SingleTransactionLimit = 0,
+            SavingsTarget = 0,
+            BlockTransfersWhenLimitReached = false
         };
-
-        customer.Accounts.Add(account);
-
-        if (request.OpeningDeposit > 0)
-        {
-            account.Transactions.Add(CreateTransaction(
-                account,
-                TransactionType.Deposit,
-                request.OpeningDeposit,
-                "Opening deposit"));
-        }
 
         _dbContext.Customers.Add(customer);
         await _dbContext.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetCustomer), new { id = customer.Id }, ToCustomerResponse(customer));
+        return AcceptedAtAction(nameof(GetCustomer), new { id = customer.Id }, ToCustomerResponse(customer));
+    }
+
+    [HttpPost("register")]
+    [AllowAnonymous]
+    public async Task<ActionResult<CustomerResponse>> RegisterCustomer(RegisterCustomerRequest request)
+    {
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        var emailExists = await _dbContext.Customers.AnyAsync(customer => customer.Email == normalizedEmail);
+        if (emailExists)
+        {
+            return Conflict(new { message = "A customer with this email already exists." });
+        }
+
+        var customer = new Customer
+        {
+            FirstName = request.FirstName.Trim(),
+            LastName = request.LastName.Trim(),
+            Email = normalizedEmail,
+            PasswordHash = PasswordHasher.Hash(request.Password),
+            Status = CustomerStatus.PendingApproval,
+            PhoneNumber = request.PhoneNumber?.Trim(),
+            DateOfBirth = request.DateOfBirth,
+            Address = request.Address?.Trim(),
+            NationalIdNumber = request.NationalIdNumber.Trim(),
+            Occupation = request.Occupation?.Trim(),
+            EmployerName = request.EmployerName?.Trim(),
+            MonthlyIncome = request.MonthlyIncome
+        };
+
+        customer.SpendingControl = new SpendingControl
+        {
+            Customer = customer,
+            MonthlySpendLimit = 0,
+            SingleTransactionLimit = 0,
+            SavingsTarget = 0,
+            BlockTransfersWhenLimitReached = false
+        };
+
+        _dbContext.Customers.Add(customer);
+        await _dbContext.SaveChangesAsync();
+
+        return AcceptedAtAction(nameof(GetCustomer), new { id = customer.Id }, ToCustomerResponse(customer));
     }
 
     [HttpGet("{id:guid}/accounts")]
@@ -140,8 +177,17 @@ public class CustomersController : ControllerBase
             customer.PhoneNumber,
             customer.DateOfBirth,
             customer.Address,
+            customer.Status,
+            customer.NationalIdNumber,
+            customer.Occupation,
+            customer.EmployerName,
+            customer.MonthlyIncome,
+            customer.ApprovedAtUtc,
+            customer.RejectionReason,
             customer.CreatedAtUtc,
-            customer.Accounts.Select(ToAccountResponse).ToList());
+            customer.Accounts.Select(ToAccountResponse).ToList(),
+            customer.KycDocuments.Select(ToKycDocumentResponse).ToList(),
+            customer.SpendingControl is null ? null : ToSpendingControlResponse(customer.SpendingControl));
     }
 
     private static AccountResponse ToAccountResponse(BankAccount account)
@@ -151,9 +197,37 @@ public class CustomersController : ControllerBase
             account.CustomerId,
             account.AccountNumber,
             account.AccountType,
+            account.Currency,
             account.Balance,
+            account.DailyTransferLimit,
+            account.DailyWithdrawalLimit,
+            account.AllowInternationalTransfers,
             account.IsActive,
             account.CreatedAtUtc);
+    }
+
+    private static KycDocumentResponse ToKycDocumentResponse(KycDocument document)
+    {
+        return new KycDocumentResponse(
+            document.Id,
+            document.CustomerId,
+            document.DocumentType,
+            document.OriginalFileName,
+            document.ContentType,
+            document.SizeBytes,
+            document.UploadedAtUtc);
+    }
+
+    private static SpendingControlResponse ToSpendingControlResponse(SpendingControl control)
+    {
+        return new SpendingControlResponse(
+            control.Id,
+            control.CustomerId,
+            control.MonthlySpendLimit,
+            control.SingleTransactionLimit,
+            control.SavingsTarget,
+            control.BlockTransfersWhenLimitReached,
+            control.UpdatedAtUtc);
     }
 
     private static BankTransaction CreateTransaction(

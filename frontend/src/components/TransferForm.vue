@@ -1,5 +1,6 @@
 <script setup>
 import { reactive, watch } from 'vue';
+import { toast } from 'vue-sonner';
 import { getAccountByNumber } from '../api';
 import { getFirstZodError, transferSchema } from '../schemas';
 import { currency } from '../utils/formatters';
@@ -53,11 +54,13 @@ async function verifyAccount() {
   const accountNumber = form.accountNumber.trim();
   if (!accountNumber) {
     form.validationError = 'Enter a recipient account number.';
+    toast.error(form.validationError);
     return;
   }
 
   if (props.selectedAccount?.accountNumber === accountNumber) {
     form.validationError = 'You cannot transfer to the same account.';
+    toast.error(form.validationError);
     return;
   }
 
@@ -65,8 +68,10 @@ async function verifyAccount() {
 
   try {
     form.destinationAccount = await getAccountByNumber(accountNumber);
+    toast.success(`Verified ${form.destinationAccount.customerName}.`);
   } catch (error) {
     form.lookupError = error.message;
+    toast.error(error.message);
   } finally {
     form.isVerifying = false;
   }
@@ -83,6 +88,7 @@ function submit() {
 
   if (!result.success) {
     form.validationError = getFirstZodError(result.error);
+    toast.error(form.validationError);
     return;
   }
 
@@ -146,10 +152,6 @@ function submit() {
       </p>
     </div>
 
-    <p v-if="form.lookupError" class="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-      {{ form.lookupError }}
-    </p>
-
     <div class="grid gap-4 md:grid-cols-2">
       <label :class="labelBase">
         Amount
@@ -161,10 +163,6 @@ function submit() {
         <input v-model="form.description" :class="inputBase" type="text" maxlength="500" placeholder="Optional" />
       </label>
     </div>
-
-    <p v-if="form.validationError" class="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-      {{ form.validationError }}
-    </p>
 
     <button type="submit" :class="primaryButton" :disabled="isLoading || !selectedAccount || !form.destinationAccount">
       <i class="pi pi-send"></i>

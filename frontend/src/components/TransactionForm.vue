@@ -1,5 +1,6 @@
 <script setup>
 import { reactive } from 'vue';
+import { toast } from 'vue-sonner';
 import { getFirstZodError, transactionSchema } from '../schemas';
 import { currency } from '../utils/formatters';
 import { cardBase, inputBase, labelBase, primaryButton, secondaryButton } from './ui';
@@ -39,6 +40,7 @@ function submit() {
 
   if (!result.success) {
     form.validationError = getFirstZodError(result.error);
+    toast.error(form.validationError);
     return;
   }
 
@@ -91,11 +93,6 @@ function submit() {
         <input v-model="form.description" :class="inputBase" type="text" maxlength="500" placeholder="Optional" />
       </label>
     </div>
-
-      <p v-if="form.validationError" class="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-      {{ form.validationError }}
-    </p>
-
     <button type="submit" :class="primaryButton" :disabled="isLoading || !selectedAccount">
       <i class="pi pi-send"></i>
       Submit transaction

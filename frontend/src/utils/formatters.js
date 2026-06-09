@@ -11,3 +11,24 @@ export function formatDate(value) {
     timeStyle: 'short'
   }).format(new Date(value));
 }
+
+const transactionTypeNames = {
+  0: 'Deposit',
+  1: 'Withdrawal',
+  2: 'TransferSent',
+  3: 'TransferReceived'
+};
+
+export function transactionTypeLabel(value) {
+  return transactionTypeNames[value] ?? value;
+}
+
+export function isCreditTransaction(value) {
+  const transactionType = transactionTypeLabel(value);
+  return transactionType === 'Deposit' || transactionType === 'TransferReceived';
+}
+
+export function isDebitTransaction(value) {
+  const transactionType = transactionTypeLabel(value);
+  return transactionType === 'Withdrawal' || transactionType === 'TransferSent';
+}

@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue';
-import { currency } from '../utils/formatters';
+import { currency, isCreditTransaction, isDebitTransaction } from '../utils/formatters';
 
 const props = defineProps({
   customer: {
@@ -19,13 +19,13 @@ const props = defineProps({
 
 const totalInflow = computed(() => {
   return props.transactions
-    .filter((transaction) => transaction.transactionType === 'Deposit' || transaction.transactionType === 'TransferReceived')
+    .filter((transaction) => isCreditTransaction(transaction.transactionType))
     .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
 });
 
 const totalOutflow = computed(() => {
   return props.transactions
-    .filter((transaction) => transaction.transactionType === 'Withdrawal' || transaction.transactionType === 'TransferSent')
+    .filter((transaction) => isDebitTransaction(transaction.transactionType))
     .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
 });
 

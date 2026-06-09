@@ -4,6 +4,7 @@ using ApiDemo.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ApiDemo.Data.Migrations
 {
     [DbContext(typeof(BankingDbContext))]
-    partial class BankingDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260609114404_FixCustomerPendingApprovalDefault")]
+    partial class FixCustomerPendingApprovalDefault
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -101,22 +104,6 @@ namespace ApiDemo.Data.Migrations
 
                     b.Property<Guid>("BankAccountId")
                         .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("CounterpartyAccountNumber")
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.Property<string>("CounterpartyAccountType")
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)");
-
-                    b.Property<string>("CounterpartyEmail")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("CounterpartyName")
-                        .HasMaxLength(220)
-                        .HasColumnType("nvarchar(220)");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
@@ -220,44 +207,6 @@ namespace ApiDemo.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Customers");
-                });
-
-            modelBuilder.Entity("ApiDemo.Models.CustomerNotification", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("NEWSEQUENTIALID()");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("CustomerId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsRead")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("nvarchar(160)");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(60)
-                        .HasColumnType("nvarchar(60)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CustomerId", "CreatedAtUtc");
-
-                    b.ToTable("CustomerNotifications");
                 });
 
             modelBuilder.Entity("ApiDemo.Models.KycDocument", b =>
@@ -394,17 +343,6 @@ namespace ApiDemo.Data.Migrations
                     b.Navigation("BankAccount");
                 });
 
-            modelBuilder.Entity("ApiDemo.Models.CustomerNotification", b =>
-                {
-                    b.HasOne("ApiDemo.Models.Customer", "Customer")
-                        .WithMany("Notifications")
-                        .HasForeignKey("CustomerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Customer");
-                });
-
             modelBuilder.Entity("ApiDemo.Models.KycDocument", b =>
                 {
                     b.HasOne("ApiDemo.Models.Customer", "Customer")
@@ -437,8 +375,6 @@ namespace ApiDemo.Data.Migrations
                     b.Navigation("Accounts");
 
                     b.Navigation("KycDocuments");
-
-                    b.Navigation("Notifications");
 
                     b.Navigation("SpendingControl");
                 });

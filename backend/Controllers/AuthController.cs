@@ -29,18 +29,61 @@ public class AuthController : ControllerBase
         var customer = await _dbContext.Customers
             .AsNoTracking()
             .Include(existingCustomer => existingCustomer.Accounts)
+            .Include(existingCustomer => existingCustomer.KycDocuments)
+            .Include(existingCustomer => existingCustomer.SpendingControl)
             .FirstOrDefaultAsync(existingCustomer => existingCustomer.Email == normalizedEmail);
 
         if (customer is null || !PasswordHasher.Verify(request.Password, customer.PasswordHash))
         {
-            return Unauthorized(new { message = "Invalid email or password." });
+            var admin = await _dbContext.SystemAdmins
+                .AsNoTracking()
+                .FirstOrDefaultAsync(existingAdmin => existingAdmin.Email == normalizedEmail);
+
+            if (admin is null || !PasswordHasher.Verify(request.Password, admin.PasswordHash))
+            {
+                return Unauthorized(new { message = "Invalid email or password." });
+            }
+
+            var adminClaims = new List<Claim>
+            {
+                new(ClaimTypes.NameIdentifier, admin.Id.ToString()),
+                new(ClaimTypes.Email, admin.Email),
+                new(ClaimTypes.Name, admin.FullName),
+                new(ClaimTypes.Role, "Admin")
+            };
+
+            var adminIdentity = new ClaimsIdentity(adminClaims, CookieAuthenticationDefaults.AuthenticationScheme);
+            await HttpContext.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                new ClaimsPrincipal(adminIdentity),
+                new AuthenticationProperties
+                {
+                    IsPersistent = false,
+                    AllowRefresh = true
+                });
+
+            return Ok(new LoginResponse("Admin", null, new AdminResponse(admin.Id, admin.FullName, admin.Email)));
+        }
+
+        if (customer.Status != CustomerStatus.Active)
+        {
+            var message = customer.Status switch
+            {
+                CustomerStatus.PendingApproval => "Your registration is waiting for admin approval.",
+                CustomerStatus.Rejected => "Your registration was rejected. Contact support for more information.",
+                CustomerStatus.Suspended => "Your account is suspended. Contact support for more information.",
+                _ => "Your account is not active."
+            };
+
+            return Unauthorized(new { message });
         }
 
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, customer.Id.ToString()),
             new(ClaimTypes.Email, customer.Email),
-            new(ClaimTypes.Name, $"{customer.FirstName} {customer.LastName}".Trim())
+            new(ClaimTypes.Name, $"{customer.FirstName} {customer.LastName}".Trim()),
+            new(ClaimTypes.Role, "Customer")
         };
 
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
@@ -53,13 +96,30 @@ public class AuthController : ControllerBase
                 AllowRefresh = true
             });
 
-        return Ok(new LoginResponse(ToCustomerResponse(customer)));
+        return Ok(new LoginResponse("Customer", ToCustomerResponse(customer), null));
     }
 
     [Authorize]
     [HttpGet("me")]
     public async Task<ActionResult<LoginResponse>> Me()
     {
+        if (User.IsInRole("Admin"))
+        {
+            var adminId = GetCurrentCustomerId();
+            if (adminId is null)
+            {
+                return Unauthorized();
+            }
+
+            var admin = await _dbContext.SystemAdmins
+                .AsNoTracking()
+                .FirstOrDefaultAsync(existingAdmin => existingAdmin.Id == adminId.Value);
+
+            return admin is null
+                ? Unauthorized()
+                : Ok(new LoginResponse("Admin", null, new AdminResponse(admin.Id, admin.FullName, admin.Email)));
+        }
+
         var customerId = GetCurrentCustomerId();
         if (customerId is null)
         {
@@ -69,9 +129,11 @@ public class AuthController : ControllerBase
         var customer = await _dbContext.Customers
             .AsNoTracking()
             .Include(existingCustomer => existingCustomer.Accounts)
+            .Include(existingCustomer => existingCustomer.KycDocuments)
+            .Include(existingCustomer => existingCustomer.SpendingControl)
             .FirstOrDefaultAsync(existingCustomer => existingCustomer.Id == customerId.Value);
 
-        return customer is null ? Unauthorized() : Ok(new LoginResponse(ToCustomerResponse(customer)));
+        return customer is null ? Unauthorized() : Ok(new LoginResponse("Customer", ToCustomerResponse(customer), null));
     }
 
     [Authorize]
@@ -98,8 +160,17 @@ public class AuthController : ControllerBase
             customer.PhoneNumber,
             customer.DateOfBirth,
             customer.Address,
+            customer.Status,
+            customer.NationalIdNumber,
+            customer.Occupation,
+            customer.EmployerName,
+            customer.MonthlyIncome,
+            customer.ApprovedAtUtc,
+            customer.RejectionReason,
             customer.CreatedAtUtc,
-            customer.Accounts.Select(ToAccountResponse).ToList());
+            customer.Accounts.Select(ToAccountResponse).ToList(),
+            customer.KycDocuments.Select(ToKycDocumentResponse).ToList(),
+            customer.SpendingControl is null ? null : ToSpendingControlResponse(customer.SpendingControl));
     }
 
     private static AccountResponse ToAccountResponse(BankAccount account)
@@ -109,8 +180,36 @@ public class AuthController : ControllerBase
             account.CustomerId,
             account.AccountNumber,
             account.AccountType,
+            account.Currency,
             account.Balance,
+            account.DailyTransferLimit,
+            account.DailyWithdrawalLimit,
+            account.AllowInternationalTransfers,
             account.IsActive,
             account.CreatedAtUtc);
+    }
+
+    private static KycDocumentResponse ToKycDocumentResponse(KycDocument document)
+    {
+        return new KycDocumentResponse(
+            document.Id,
+            document.CustomerId,
+            document.DocumentType,
+            document.OriginalFileName,
+            document.ContentType,
+            document.SizeBytes,
+            document.UploadedAtUtc);
+    }
+
+    private static SpendingControlResponse ToSpendingControlResponse(SpendingControl control)
+    {
+        return new SpendingControlResponse(
+            control.Id,
+            control.CustomerId,
+            control.MonthlySpendLimit,
+            control.SingleTransactionLimit,
+            control.SavingsTarget,
+            control.BlockTransfersWhenLimitReached,
+            control.UpdatedAtUtc);
     }
 }

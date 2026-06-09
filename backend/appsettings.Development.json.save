@@ -1,0 +1,15 @@
+{
+  "ConnectionStrings": {
+      "BankingDb": "Server=(localdb)\\MSSQLLocalDB;Database=ApiDemoBankingDb;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True"
+    },
+    "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  }
+}
+^X
+X
+
+							

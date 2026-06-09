@@ -10,6 +10,10 @@ const props = defineProps({
   activeView: {
     type: String,
     required: true
+  },
+  unreadNotifications: {
+    type: Number,
+    default: 0
   }
 });
 
@@ -22,8 +26,13 @@ const initials = computed(() => {
 const navItems = [
   { id: 'overview', label: 'Overview', icon: 'pi pi-chart-line' },
   { id: 'accounts', label: 'Accounts', icon: 'pi pi-wallet' },
+  { id: 'kyc', label: 'KYC Documents', icon: 'pi pi-id-card' },
+  { id: 'money', label: 'Deposit / Withdraw', icon: 'pi pi-arrow-right-arrow-left' },
+  { id: 'controls', label: 'Financial Management', icon: 'pi pi-shield' },
   { id: 'transfer', label: 'Send Money', icon: 'pi pi-send' },
-  { id: 'activity', label: 'Activity', icon: 'pi pi-list' }
+  { id: 'transactions', label: 'Transaction History', icon: 'pi pi-list' },
+  { id: 'notifications', label: 'Notifications', icon: 'pi pi-bell' },
+  { id: 'profile', label: 'Profile', icon: 'pi pi-user' }
 ];
 </script>
 
@@ -65,6 +74,12 @@ const navItems = [
             <i :class="item.icon"></i>
           </span>
           <span>{{ item.label }}</span>
+          <span
+            v-if="item.id === 'notifications' && unreadNotifications > 0"
+            class="ml-auto rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-black text-white"
+          >
+            {{ unreadNotifications }}
+          </span>
         </button>
         </nav>
       </div>

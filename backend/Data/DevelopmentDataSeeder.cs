@@ -8,6 +8,8 @@ public static class DevelopmentDataSeeder
 {
     public const string DemoEmail = "demo.customer@example.com";
     public const string DemoPassword = "Password123!";
+    public const string AdminEmail = "admin@apidemo.test";
+    public const string AdminPassword = "Admin123!";
 
     public static async Task SeedAsync(IServiceProvider services)
     {
@@ -28,6 +30,7 @@ public static class DevelopmentDataSeeder
                 LastName = "Customer",
                 Email = DemoEmail,
                 PasswordHash = PasswordHasher.Hash(DemoPassword),
+                Status = CustomerStatus.Active,
                 PhoneNumber = "+15550109999",
                 DateOfBirth = new DateOnly(1990, 1, 1),
                 Address = "100 Demo Street, New York, NY"
@@ -57,6 +60,11 @@ public static class DevelopmentDataSeeder
         else if (string.IsNullOrWhiteSpace(demoCustomer.PasswordHash))
         {
             demoCustomer.PasswordHash = PasswordHasher.Hash(DemoPassword);
+            demoCustomer.Status = CustomerStatus.Active;
+        }
+        else if (demoCustomer.Status == CustomerStatus.PendingApproval)
+        {
+            demoCustomer.Status = CustomerStatus.Active;
         }
 
         var existingCustomers = await dbContext.Customers
@@ -71,7 +79,7 @@ public static class DevelopmentDataSeeder
                 customer.PasswordHash = PasswordHasher.Hash(DemoPassword);
             }
 
-            if (customer.Accounts.Count == 0)
+            if (customer.Status == CustomerStatus.Active && customer.Accounts.Count == 0)
             {
                 customer.Accounts.Add(new BankAccount
                 {
@@ -81,6 +89,21 @@ public static class DevelopmentDataSeeder
                     Balance = 0.00m
                 });
             }
+        }
+
+        var admin = await dbContext.SystemAdmins.FirstOrDefaultAsync(existingAdmin => existingAdmin.Email == AdminEmail);
+        if (admin is null)
+        {
+            dbContext.SystemAdmins.Add(new SystemAdmin
+            {
+                FullName = "System Admin",
+                Email = AdminEmail,
+                PasswordHash = PasswordHasher.Hash(AdminPassword)
+            });
+        }
+        else if (!PasswordHasher.Verify(AdminPassword, admin.PasswordHash))
+        {
+            admin.PasswordHash = PasswordHasher.Hash(AdminPassword);
         }
 
         await dbContext.SaveChangesAsync();

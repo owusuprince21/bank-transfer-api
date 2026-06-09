@@ -95,11 +95,18 @@ public class TransactionsController : ControllerBase
         return new TransactionResponse(
             transaction.Id,
             transaction.BankAccountId,
+            transaction.BankAccount?.AccountNumber,
+            transaction.BankAccount?.AccountType,
+            transaction.BankAccount?.Currency,
             transaction.TransactionType,
             transaction.Amount,
             transaction.BalanceAfterTransaction,
             transaction.Description,
             transaction.ReferenceNumber,
+            transaction.CounterpartyName,
+            transaction.CounterpartyAccountNumber,
+            transaction.CounterpartyAccountType,
+            transaction.CounterpartyEmail,
             transaction.CreatedAtUtc);
     }
 
